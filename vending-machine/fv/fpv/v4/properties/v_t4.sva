@@ -1,0 +1,141 @@
+module v_sanduba (
+  clock, reset,
+  r_green, r_atum, r_bacon,
+  ea, pe,
+  m100, dev, count,
+  d100, green, atum, bacon, busy
+);
+
+  input clock, reset;
+  input r_green, r_atum, r_bacon; // inputs
+  input m100, dev; // inputs
+  output d100, green, atum, bacon, busy; // outputs
+  input [4:0] count;
+  input [2:0] ea;
+  input [2:0] pe;
+
+  typedef enum {action, soma, sgreen, satum, sbacon, nulo, devolve} state_type;
+
+  state_type ea_v;
+  state_type pe_v;
+
+  assign ea_v = state_type'(ea);
+  assign pe_v = state_type'(pe);
+
+  default clocking @(posedge clock); endclocking
+  default disable iff reset;
+
+  //=======================================================================
+  // Cover points
+  //
+
+  //-----------------------------------------------------------------------
+  // Every state must be reachable
+  genvar i;
+  generate for (i=action; i<=devolve; i++) begin :g1
+    cover_states:  cover property (ea_v == i);
+  end
+  endgenerate
+
+
+  //=======================================================================
+  // Assumptions
+
+  //-----------------------------------------------------------------------
+  //
+  //
+  only_on_the_action_state: assume property (
+      (ea != action) and (m100 == 0 && dev == 0) and 
+      (sgreen == 0 && satum == 0 && sbacon == 0) and
+      (busy == 1) 
+  );  
+
+  on_reset_only: assume property (
+      (reset == 1) and (pe == "000" and count == "00000")
+  );
+
+
+  //=======================================================================
+  // Assertions
+  //
+
+  //-----------------------------------------------------------------------
+  //  Assertion on requests: r_green, r_atum, r_bacon
+  //    Only one of the requests can be 1 at a given time
+  //
+  request_onehot: assert property (  @(posedge clock)  
+                     (r_green == 1 && r_atum == 0 && r_bacon == 0) or
+                     (r_green == 0 && r_atum == 1 && r_bacon == 0) or
+                     (r_green == 0 && r_atum == 0 && r_bacon == 1) 
+                  );
+
+  //-----------------------------------------------------------------------
+  //  Assertion on grants: green, atum, bacon
+  //  Only one of the grants can be 1 at a given time
+  //
+  grant_onehot: assert property (  @(posedge clock)  
+                     (green == 1 && atum == 0 && bacon == 0) or
+                     (green == 0 && atum == 1 && bacon == 0) or
+                     (green == 0 && atum == 0 && bacon == 1) 
+                  );
+
+  //-----------------------------------------------------------------------
+  //  Assertions on releases: sgreen, satum, sbacon
+  //  Each sandwich should be released according to the request and
+  //  quantity of coins
+  //
+  release_sanduba_sg: assert property ( @(posedge clock)
+        (r_green) and (count > 1) ##1 (sgreen && !satum && !sbacon)
+  );
+  
+  release_sanduba_sa: assert property ( @(posedge clock)
+        (r_atum) and (count > 2) ##1 (satum && !sgreen && !sbacon)
+  );
+
+  release_sanduba_sb: assert property ( @(posedge clock)
+        (r_bacon) and (count > 3) ##1 (sbacon && !sgreen && !satum)
+  );
+
+  //-----------------------------------------------------------------------
+  //  Assertions on state transitions
+  //
+  transition1a: assert property ( @(posedge clock) 
+      (ea == action and r_green == 1 and count > 1) ##1 
+             ( ea == sgreen and green == 1 and busy == 1 )
+  );
+  transition1b: assert property ( @(posedge clock) 
+      (ea == action and r_atum == 1 and count > 2) ##1 
+             ( ea == satum and atum == 1 and busy == 1 )
+  );
+  transition1c: assert property ( @(posedge clock) 
+      (ea == action and r_bacon == 1 and count > 3) ##1 
+             ( ea == sbacon and bacon == 1 and busy == 1 )
+  );
+  transition2: assert property ( @(posedge clock) 
+      (ea == action and m100 == 1) ##1 (ea == soma and busy == 1 
+                                       and count > 1)
+  );
+  transition3: assert property ( @(posedge clock) 
+      (ea == action and dev==1) ##1 (ea == nulo and busy == 1)
+  );
+  transition4: assert property ( @(posedge clock) 
+      (ea == soma) ##1 (ea == action and busy == 0)
+  );
+  transition5: assert property ( @(posedge clock) 
+      (ea == nulo and count > 0) ##1 
+             (ea == devolve and d100 == 1 and busy == 1)
+  );
+  transition6: assert property ( @(posedge clock) 
+      (ea == devolve) ##1 (ea == nulo and busy == 1)
+  );
+  transition7: assert property ( @(posedge clock) 
+      (ea == nulo and count == 0) ##1 (ea == action and busy == 0)
+  );
+  transition8: assert property ( @(posedge clock) 
+      (ea == sgreen or ea == satum or ea == sbacon) ##1 
+             (ea == nulo and busy == 1)
+  );
+
+
+
+endmodule // v_t4
